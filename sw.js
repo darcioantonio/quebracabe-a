@@ -1,4 +1,4 @@
-const CACHE = 'qpc-v1';
+const CACHE = 'qpc-v2';
 const CORE = [
   './',
   './index.html',

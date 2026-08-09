@@ -696,3 +696,43 @@ body {
   .board { width: min(92vw, 54dvh, 400px); }
   .tray { padding-bottom: 8px; }
 }
+
+/* ---------- landscape (celular de lado) ---------- */
+@media (orientation: landscape) and (max-height: 640px) {
+  #screen-game {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px;
+  }
+  .game-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 6px 12px;
+  }
+  .game-header .timer { font-size: 1.5rem; min-width: 110px; }
+  .game-stage {
+    flex: 1;
+    min-width: 0;
+    padding-top: 52px;
+  }
+  .board { width: min(calc(100dvh - 140px), 50vw, 420px); }
+  .tray {
+    width: 28%;
+    max-width: 180px;
+    min-width: 96px;
+    align-self: stretch;
+    padding: 52px 6px 10px 0;
+  }
+  .tray-inner {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 14px;
+  }
+}

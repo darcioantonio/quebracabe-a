@@ -135,6 +135,11 @@
   const piecesLayerEl = $('#piecesLayer');
   const timerEl = $('#timerDisplay');
 
+  const landscapeMQ = window.matchMedia('(orientation: landscape)');
+  function isLandscape() {
+    return landscapeMQ.matches;
+  }
+
   function newGame() {
     if (!images.length) return;
     stopTimer();
@@ -272,7 +277,11 @@
       p.el.style.width = game.pieceSize + 'px';
       p.el.style.height = game.pieceSize + 'px';
     });
-    trayInnerEl.style.height = `${game.pieceSize + 12}px`;
+    if (!isLandscape()) {
+      trayInnerEl.style.height = `${game.pieceSize + 12}px`;
+    } else {
+      trayInnerEl.style.height = '';
+    }
   }
 
   function boardCellCenter(index) {
@@ -289,6 +298,11 @@
     const tr = trayInnerEl.getBoundingClientRect();
     const size = game.pieceSize;
     const gap = 8;
+    if (isLandscape()) {
+      const x = tr.left + tr.width / 2;
+      const y = tr.top + 12 + index * (size + gap) + size / 2;
+      return { x, y };
+    }
     const y = tr.top + tr.height / 2;
     const x = tr.left + 14 + index * (size + gap) + size / 2;
     return { x, y };
@@ -508,6 +522,11 @@
   window.addEventListener('resize', () => {
     if (game) relayout();
   });
+  if (landscapeMQ.addEventListener) {
+    landscapeMQ.addEventListener('change', () => {
+      if (game) relayout();
+    });
+  }
 
   /* ---------- win actions ---------- */
   $('#btnSaveRecord').addEventListener('click', () => {
