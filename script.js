@@ -9,15 +9,14 @@
   const NAME_KEY = 'qpc_name';
 
   const DIFFS = {
-    '3x3': { rows: 3, cols: 3, label: 'Fácil', sub: '9 pcs' },
-    '4x4': { rows: 4, cols: 4, label: 'Médio', sub: '16 pcs' },
-    '5x5': { rows: 5, cols: 5, label: 'Difícil', sub: '25 pcs' },
-    '6x6': { rows: 6, cols: 6, label: 'Insano', sub: '36 pcs' },
+    '4x4': { rows: 4, cols: 4, label: 'Fácil', sub: '16 pcs' },
+    '6x6': { rows: 6, cols: 6, label: 'Médio', sub: '36 pcs' },
+    '8x8': { rows: 8, cols: 8, label: 'Difícil', sub: '64 pcs' },
+    '10x10': { rows: 10, cols: 10, label: 'Insano', sub: '100 pcs' },
   };
 
   /* ================= state ================= */
   let images = [];
-  let selImage = 'random'; // 'random' or image object { src, name, thumb }
   let selDiff = '4x4';
   let game = null; // { imgSrc, imgName, rows, cols, total, pieceSize, pieces[], tray[], lockedCount, finished }
   let timer = { running: false, elapsedMs: 0, last: 0, interval: null };
@@ -184,7 +183,6 @@
           break;
         }
       }
-      // If 3 consecutive numbers yield no images, stop scanning to keep it fast
       if (!imageFoundInGroup && i > 10 && found.length > 0) {
         let missingStreak = true;
         for (let next = i; next <= Math.min(i + 2, 50); next++) {
@@ -197,7 +195,6 @@
         if (missingStreak) break;
       }
     }
-    // If fewer than 4 images exist locally, add procedural fallback artworks
     if (found.length < 4) {
       const fallbacks = generateFallbackArtworks();
       found.push(...fallbacks);
@@ -205,42 +202,117 @@
     return found;
   }
 
-  /* ================= menu ================= */
-  function buildImageGrid() {
-    const wrap = $('#imageGrid');
-    if (!wrap) return;
-    wrap.innerHTML = '';
+  /* ================= JIGSAW PUZZLE PIECE MESH & CANVAS DRAWING ================= */
+  function generateJigsawMesh(rows, cols) {
+    const hEdges = Array.from({ length: rows - 1 }, () =>
+      Array.from({ length: cols }, () => (Math.random() < 0.5 ? 1 : -1))
+    );
+    const vEdges = Array.from({ length: rows }, () =>
+      Array.from({ length: cols - 1 }, () => (Math.random() < 0.5 ? 1 : -1))
+    );
 
-    // "Random" option thumbnail
-    const randDiv = document.createElement('div');
-    randDiv.className = 'image-thumb random-thumb' + (selImage === 'random' ? ' selected' : '');
-    randDiv.innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
-      <span>Aleatório</span>
-    `;
-    randDiv.addEventListener('click', () => {
-      selImage = 'random';
-      $$('.image-thumb').forEach((t) => t.classList.remove('selected'));
-      randDiv.classList.add('selected');
-      SFX.pick();
-    });
-    wrap.appendChild(randDiv);
-
-    images.forEach((img) => {
-      const div = document.createElement('div');
-      div.className = 'image-thumb' + (selImage === img ? ' selected' : '');
-      div.style.backgroundImage = `url("${img.src}")`;
-      div.innerHTML = `<span class="image-thumb-badge">${escapeHtml(img.name)}</span>`;
-      div.addEventListener('click', () => {
-        selImage = img;
-        $$('.image-thumb').forEach((t) => t.classList.remove('selected'));
-        div.classList.add('selected');
-        SFX.pick();
-      });
-      wrap.appendChild(div);
-    });
+    const mesh = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        mesh.push({
+          top: r === 0 ? 0 : -hEdges[r - 1][c],
+          right: c === cols - 1 ? 0 : vEdges[r][c],
+          bottom: r === rows - 1 ? 0 : hEdges[r][c],
+          left: c === 0 ? 0 : -vEdges[r][c - 1],
+        });
+      }
+    }
+    return mesh;
   }
 
+  function drawJigsawEdge(ctx, x1, y1, x2, y2, edgeVal) {
+    if (edgeVal === 0) {
+      ctx.lineTo(x2, y2);
+      return;
+    }
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len;
+    const uy = dy / len;
+    const nx = -uy * edgeVal;
+    const ny =  ux * edgeVal;
+
+    const tabH = len * 0.22;
+
+    const p = (t, n) => ({
+      x: x1 + ux * (t * len) + nx * (n * tabH),
+      y: y1 + uy * (t * len) + ny * (n * tabH),
+    });
+
+    const p35 = p(0.35, 0);
+    const p38 = p(0.38, 0.05);
+    const p42 = p(0.40, 0.35);
+    const p44 = p(0.42, 0.85);
+    const p56 = p(0.58, 0.85);
+    const p58 = p(0.60, 0.35);
+    const p62 = p(0.62, 0.05);
+    const p65 = p(0.65, 0);
+
+    ctx.lineTo(p35.x, p35.y);
+    ctx.bezierCurveTo(p38.x, p38.y, p42.x, p42.y, p44.x, p44.y);
+    ctx.bezierCurveTo(p(0.44, 1.18).x, p(0.44, 1.18).y, p(0.56, 1.18).x, p(0.56, 1.18).y, p56.x, p56.y);
+    ctx.bezierCurveTo(p58.x, p58.y, p62.x, p62.y, p65.x, p65.y);
+    ctx.lineTo(x2, y2);
+  }
+
+  function renderJigsawPieceCanvas(imgEl, r, c, rows, cols, w, h, edges) {
+    const tabMargin = Math.ceil(Math.max(w, h) * 0.28);
+    const cvW = Math.ceil(w + 2 * tabMargin);
+    const cvH = Math.ceil(h + 2 * tabMargin);
+
+    const cv = document.createElement('canvas');
+    cv.width = cvW;
+    cv.height = cvH;
+    const ctx = cv.getContext('2d');
+
+    const x0 = tabMargin;
+    const y0 = tabMargin;
+    const x1 = tabMargin + w;
+    const y1 = tabMargin + h;
+
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    drawJigsawEdge(ctx, x0, y0, x1, y0, edges.top);
+    drawJigsawEdge(ctx, x1, y0, x1, y1, edges.right);
+    drawJigsawEdge(ctx, x1, y1, x0, y1, edges.bottom);
+    drawJigsawEdge(ctx, x0, y1, x0, y0, edges.left);
+    ctx.closePath();
+
+    ctx.save();
+    ctx.clip();
+
+    const origW = imgEl.naturalWidth || imgEl.width || 600;
+    const origH = imgEl.naturalHeight || imgEl.height || 600;
+    const cellW = origW / cols;
+    const cellH = origH / rows;
+
+    const srcX = c * cellW - (tabMargin / w) * cellW;
+    const srcY = r * cellH - (tabMargin / h) * cellH;
+    const srcW = (cvW / w) * cellW;
+    const srcH = (cvH / h) * cellH;
+
+    ctx.drawImage(imgEl, srcX, srcY, srcW, srcH, 0, 0, cvW, cvH);
+
+    // 3D tactile bevel stroke
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.lineWidth = Math.max(1.8, w * 0.045);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = Math.max(1.0, w * 0.022);
+    ctx.stroke();
+
+    ctx.restore();
+
+    return { dataUrl: cv.toDataURL(), cvW, cvH, tabMargin };
+  }
+
+  /* ================= menu ================= */
   function buildDifficulties() {
     const wrap = $('#difficultyOptions');
     if (!wrap) return;
@@ -248,7 +320,7 @@
     Object.entries(DIFFS).forEach(([key, d]) => {
       const b = document.createElement('button');
       b.className = 'diff-option' + (key === selDiff ? ' selected' : '');
-      b.innerHTML = `<b>${d.label}</b><span>${d.cols}x${d.rows}</span>`;
+      b.innerHTML = `<b>${d.label}</b><span>${d.cols}x${d.rows} (${d.rows * d.cols} pcs)</span>`;
       b.addEventListener('click', () => {
         selDiff = key;
         $$('.diff-option').forEach((o) => o.classList.remove('selected'));
@@ -267,7 +339,7 @@
       .sort((a, b) => a.time - b.time)[0];
     if (best) {
       el.classList.remove('hidden');
-      el.innerHTML = `Melhor tempo em <b>${DIFFS[selDiff].label}</b>: <b>${fmtTime(best.time)}</b> — ${escapeHtml(best.name)}`;
+      el.innerHTML = `Melhor tempo em <b>${DIFFS[selDiff].label} (${DIFFS[selDiff].cols}x${DIFFS[selDiff].rows})</b>: <b>${fmtTime(best.time)}</b> — ${escapeHtml(best.name)}`;
     } else {
       el.classList.add('hidden');
     }
@@ -293,10 +365,8 @@
     $('#btnSaveRecord').classList.remove('hidden');
     $('#btnViewRanking').classList.add('hidden');
 
-    let chosenImg = selImage;
-    if (selImage === 'random' || !selImage) {
-      chosenImg = images[Math.floor(Math.random() * images.length)];
-    }
+    // Always pick a random image automatically on new game
+    const chosenImg = images[Math.floor(Math.random() * images.length)];
 
     const d = DIFFS[selDiff];
     game = {
@@ -309,17 +379,32 @@
       pieces: [],
       tray: [],
       cellsEl: [],
+      mesh: generateJigsawMesh(d.rows, d.cols),
       lockedCount: 0,
       finished: false,
     };
 
     boardImageEl.style.backgroundImage = `url("${game.imgSrc}")`;
     createCells();
-    createPieces();
-    measure();
-    updateProgress();
-    shuffleAndDeal();
-    startTimer();
+
+    // Preload image element to render jigsaw canvases
+    const loadedImg = new Image();
+    loadedImg.crossOrigin = 'anonymous';
+    loadedImg.onload = () => {
+      createPieces(loadedImg);
+      measure();
+      updateProgress();
+      shuffleAndDeal();
+      startTimer();
+    };
+    loadedImg.onerror = () => {
+      createPieces(null);
+      measure();
+      updateProgress();
+      shuffleAndDeal();
+      startTimer();
+    };
+    loadedImg.src = game.imgSrc;
   }
 
   function updateProgress() {
@@ -391,22 +476,45 @@
     });
   }
 
-  function createPieces() {
+  function createPieces(loadedImg) {
     piecesLayerEl.innerHTML = '';
     game.pieces = [];
     const { rows, cols } = game;
     const total = rows * cols;
+    const pieceW = boardEl.clientWidth / cols || 40;
+    const pieceH = boardEl.clientHeight / rows || 40;
+
     for (let id = 0; id < total; id++) {
       const r = Math.floor(id / cols);
       const c = id % cols;
       const el = document.createElement('div');
       el.className = 'piece';
-      el.style.backgroundImage = `url("${game.imgSrc}")`;
-      el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
-      el.style.backgroundPosition = `${cols === 1 ? 0 : (c / (cols - 1)) * 100}% ${rows === 1 ? 0 : (r / (rows - 1)) * 100}%`;
+
+      let cvW = pieceW;
+      let cvH = pieceH;
+      let tabMargin = 0;
+
+      if (loadedImg) {
+        const rendered = renderJigsawPieceCanvas(
+          loadedImg, r, c, rows, cols, pieceW, pieceH, game.mesh[id]
+        );
+        el.style.backgroundImage = `url("${rendered.dataUrl}")`;
+        el.style.backgroundSize = '100% 100%';
+        cvW = rendered.cvW;
+        cvH = rendered.cvH;
+        tabMargin = rendered.tabMargin;
+      } else {
+        el.style.backgroundImage = `url("${game.imgSrc}")`;
+        el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+        el.style.backgroundPosition = `${cols === 1 ? 0 : (c / (cols - 1)) * 100}% ${rows === 1 ? 0 : (r / (rows - 1)) * 100}%`;
+      }
+
       const piece = {
         id,
         el,
+        cvW,
+        cvH,
+        tabMargin,
         locked: false,
         cell: -1,
         inTray: true,
@@ -432,11 +540,21 @@
     game.pieceSize = boardEl.clientWidth / game.cols;
     game.boardRect = boardEl.getBoundingClientRect();
     boardEl.style.backgroundSize = `${game.pieceSize * 2}px ${game.pieceSize * 2}px`;
+
+    const { rows, cols } = game;
+    const pieceW = game.pieceSize;
+    const pieceH = game.pieceSize;
+
     game.pieces.forEach((p) => {
-      p.el.style.width = game.pieceSize + 'px';
-      p.el.style.height = game.pieceSize + 'px';
+      const tabMargin = Math.ceil(Math.max(pieceW, pieceH) * 0.28);
+      p.cvW = Math.ceil(pieceW + 2 * tabMargin);
+      p.cvH = Math.ceil(pieceH + 2 * tabMargin);
+      p.tabMargin = tabMargin;
+      p.el.style.width = p.cvW + 'px';
+      p.el.style.height = p.cvH + 'px';
     });
-    trayInnerEl.style.height = `${game.pieceSize + 16}px`;
+
+    trayInnerEl.style.height = `${game.pieceSize * 1.5 + 20}px`;
   }
 
   function boardCellCenter(index) {
@@ -452,16 +570,17 @@
   function trayPosFor(index) {
     const tr = trayInnerEl.getBoundingClientRect();
     const size = game.pieceSize;
-    const gap = 10;
+    const gap = 12;
     const y = tr.top + tr.height / 2;
-    const x = tr.left + 16 + index * (size + gap) + size / 2 - trayInnerEl.scrollLeft;
+    const x = tr.left + 20 + index * (size * 1.2 + gap) + (size * 1.2) / 2 - trayInnerEl.scrollLeft;
     return { x, y };
   }
 
   function applyTransform(piece, x, y, rot = 0, scale = 1) {
-    const size = piece.el.offsetWidth || game.pieceSize;
-    piece.el.style.setProperty('--px', `${x - size / 2}px`);
-    piece.el.style.setProperty('--py', `${y - size / 2}px`);
+    const sizeW = piece.cvW || game.pieceSize;
+    const sizeH = piece.cvH || game.pieceSize;
+    piece.el.style.setProperty('--px', `${x - sizeW / 2}px`);
+    piece.el.style.setProperty('--py', `${y - sizeH / 2}px`);
     piece.el.style.setProperty('--rot', `${rot}deg`);
     piece.el.style.setProperty('--scale', scale);
   }
@@ -542,9 +661,8 @@
     if (piece.locked) return;
     e.preventDefault();
     
-    // On touch devices, apply finger Y offset so finger doesn't obscure the piece
     const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
-    const fingerOffsetY = isTouch ? 50 : 0;
+    const fingerOffsetY = isTouch ? 55 : 0;
 
     const rect = piece.el.getBoundingClientRect();
     dragging = {
@@ -571,14 +689,14 @@
     if (d.moved) {
       const targetY = y - d.dy;
       const targetX = x - d.dx;
-      applyTransform(d.piece, targetX, targetY, 0, 1.1);
+      applyTransform(d.piece, targetX, targetY, 0, 1.12);
       checkMagnetHighlight(targetX, targetY);
     }
   }
 
   function checkMagnetHighlight(x, y) {
     if (!game) return;
-    const { boardRect, cols, rows, pieceSize } = game;
+    const { cols, rows, pieceSize } = game;
     let closestCell = -1;
     let minDist = pieceSize * 0.75;
 
@@ -634,10 +752,10 @@
   function dropPiece(piece, x, y) {
     const { boardRect, cols, rows, pieceSize } = game;
     const insideBoard =
-      x >= boardRect.left - pieceSize * 0.3 &&
-      x <= boardRect.right + pieceSize * 0.3 &&
-      y >= boardRect.top - pieceSize * 0.3 &&
-      y <= boardRect.bottom + pieceSize * 0.3;
+      x >= boardRect.left - pieceSize * 0.4 &&
+      x <= boardRect.right + pieceSize * 0.4 &&
+      y >= boardRect.top - pieceSize * 0.4 &&
+      y <= boardRect.bottom + pieceSize * 0.4;
 
     if (!insideBoard) {
       if (piece.cell >= 0) {
@@ -705,7 +823,7 @@
     const finalMs = timer.elapsedMs;
     setTimeout(() => {
       $('#winTime').textContent = fmtTime(finalMs);
-      $('#winInfo').textContent = `${DIFFS[selDiff].label} (${game.cols}x${game.rows}) — ${game.imgName}`;
+      $('#winInfo').textContent = `${DIFFS[selDiff].label} (${game.cols}x${game.rows} - ${game.total} pcs) — ${game.imgName}`;
       $('#playerName').value = getPlayerName();
       $('#btnViewRanking').classList.add('hidden');
       $('#winOverlay').classList.remove('hidden');
@@ -1018,18 +1136,16 @@
   buildRankFilters();
   initInstallGate();
 
-  // 1. Load fallback images SYNCHRONOUSLY so game can be played instantly (0ms)
+  // Load fallback images SYNCHRONOUSLY
   images = generateFallbackArtworks();
-  buildImageGrid();
   updateMenuBest();
 
-  // 2. Discover local IMG/1.jpg..50.jpg with cache buster timestamp
+  // Discover local IMG/1.jpg..50.jpg
   discoverImages().then((found) => {
     if (found && found.length > 0) {
       const localOnly = found.filter(f => !f.id.startsWith('art-'));
       if (localOnly.length > 0) {
         images = [...localOnly, ...generateFallbackArtworks()];
-        buildImageGrid();
         updateMenuBest();
       }
     }
