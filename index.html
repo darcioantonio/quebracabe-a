@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Quebra-Cabeça</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a0b1e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Quebra-Cabeça">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="bg" aria-hidden="true"></div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+
+<!-- ============ INSTALL GATE ============ -->
+<div id="installScreen" class="install-screen">
+  <div class="install-card">
+    <div class="install-icon">
+      <img src="icons/icon-192.png" alt="Quebra-Cabeça">
+    </div>
+    <h1 class="logo">Quebra-Cabeça</h1>
+    <p class="tagline">Instale para jogar em tela cheia</p>
+    <ul class="install-features">
+      <li>Tela cheia 100% sem barras do navegador</li>
+      <li>Joga offline, sem internet</li>
+      <li>Ranking salvo no seu aparelho</li>
+    </ul>
+    <button id="btnInstall" class="btn btn-primary">Instalar agora</button>
+    <div id="installIos" class="install-ios hidden">
+      <p>No iPhone/iPad, toque no botão <b>Compartilhar</b> e escolha <b>Adicionar à Tela de Início</b>.</p>
+      <div class="ios-steps">
+        <span>1. Toque em <b>Compartilhar</b></span>
+        <span>2. Toque em <b>Adicionar à Tela de Início</b></span>
+        <span>3. Abra o jogo pelo novo ícone</span>
+      </div>
+    </div>
+    <p id="installFallback" class="install-fallback hidden">
+      Para instalar, abra este site por um endereço seguro (https). Se preferir,
+      <a href="#" id="btnPlayAnyway">jogar direto no navegador</a>.
+    </p>
+  </div>
+</div>
+
+<!-- ============ MENU ============ -->
+<section id="screen-menu" class="screen active">
+  <div class="card menu-card">
+    <h1 class="logo">Quebra-Cabeça</h1>
+    <p class="tagline">Monte a imagem no menor tempo possível!<br>A imagem é sorteada a cada jogo.</p>
+
+    <div class="menu-block">
+      <h3>Dificuldade</h3>
+      <div id="difficultyOptions" class="difficulty-options"></div>
+    </div>
+
+    <p id="noImages" class="error hidden">Nenhuma imagem encontrada em <code>IMG</code>. Adicione imagens como <code>1.jpg</code>, <code>2.jpg</code>...</p>
+
+    <div id="menuBest" class="menu-best hidden"></div>
+
+    <button id="btnPlay" class="btn btn-primary">Jogar</button>
+    <button id="btnRanking" class="btn btn-ghost">Ranking</button>
+    <button id="btnInstallApp" class="btn btn-ghost btn-install">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Instalar app
+    </button>
+  </div>
+</section>
+
+<!-- ============ GAME ============ -->
+<section id="screen-game" class="screen">
+  <header class="game-header">
+    <button id="btnHome" class="icon-btn" title="Menu" aria-label="Menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    </button>
+    <div id="timerDisplay" class="timer">00:00</div>
+    <div class="header-actions">
+      <button id="btnPreview" class="icon-btn" title="Ver imagem (dica)" aria-label="Ver imagem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button id="btnPause" class="icon-btn" title="Pausar" aria-label="Pausar">
+        <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        <svg class="icon-play hidden" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="game-stage">
+    <div id="board" class="board">
+      <div id="boardImage" class="board-image"></div>
+      <div id="boardCells" class="board-cells"></div>
+    </div>
+  </div>
+
+  <div id="tray" class="tray">
+    <div id="trayInner" class="tray-inner"></div>
+  </div>
+
+  <div class="pieces-layer" id="piecesLayer"></div>
+</section>
+
+<!-- ============ RANKING ============ -->
+<section id="screen-ranking" class="screen">
+  <div class="card ranking-card">
+    <h2 class="rank-title">Ranking</h2>
+    <p class="tagline">Os menores tempos de montagem</p>
+
+    <div id="rankFilters" class="rank-filters"></div>
+
+    <div id="rankList" class="rank-list"></div>
+    <p id="rankEmpty" class="empty hidden">Nenhum recorde ainda. Seja o primeiro!</p>
+
+    <div class="rank-actions">
+      <button id="btnRankBack" class="btn btn-ghost">Voltar</button>
+      <button id="btnRankClear" class="btn btn-danger">Limpar</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PAUSE OVERLAY ============ -->
+<div id="pauseOverlay" class="overlay hidden">
+  <div class="card overlay-card">
+    <h2>Pausado</h2>
+    <p class="overlay-sub">O tempo está congelado</p>
+    <button id="btnResume" class="btn btn-primary">Continuar</button>
+    <button id="btnRestart" class="btn btn-ghost">Recomeçar</button>
+    <button id="btnQuit" class="btn btn-ghost">Menu</button>
+  </div>
+</div>
+
+<!-- ============ WIN OVERLAY ============ -->
+<div id="winOverlay" class="overlay hidden">
+  <div class="card overlay-card win-card">
+    <h2>Parabéns!</h2>
+    <p class="overlay-sub">Quebra-cabeça montado!</p>
+    <div id="winTime" class="win-time">00:00</div>
+    <div id="winInfo" class="win-info"></div>
+    <label class="field-label" for="playerName">Seu nome</label>
+    <input id="playerName" class="field-input" type="text" maxlength="20" placeholder="Jogador">
+    <button id="btnSaveRecord" class="btn btn-primary">Salvar no ranking</button>
+    <button id="btnViewRanking" class="btn btn-ghost hidden">Ver ranking</button>
+    <button id="btnPlayAgain" class="btn btn-ghost">Jogar novamente</button>
+    <button id="btnWinMenu" class="btn btn-ghost">Menu</button>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="script.js"></script>
+<script>
+  if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  }
+</script>
+</body>
+</html>
