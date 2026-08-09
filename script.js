@@ -171,13 +171,30 @@
   async function discoverImages() {
     const found = [];
     const exts = ['jpg', 'jpeg', 'png', 'webp'];
-    for (let i = 1; i <= 9; i++) {
+    const cacheBuster = `v=${Date.now()}`;
+    
+    for (let i = 1; i <= 50; i++) {
+      let imageFoundInGroup = false;
       for (const e of exts) {
-        const src = `IMG/${i}.${e}`;
-        if (await tryLoad(src)) {
-          found.push({ src, name: `Imagem ${i}`, id: `img-${i}` });
+        const rawSrc = `IMG/${i}.${e}`;
+        const srcWithBuster = `${rawSrc}?${cacheBuster}`;
+        if (await tryLoad(srcWithBuster)) {
+          found.push({ src: srcWithBuster, rawSrc, name: `Imagem ${i}`, id: `img-${i}` });
+          imageFoundInGroup = true;
           break;
         }
+      }
+      // If 3 consecutive numbers yield no images, stop scanning to keep it fast
+      if (!imageFoundInGroup && i > 10 && found.length > 0) {
+        let missingStreak = true;
+        for (let next = i; next <= Math.min(i + 2, 50); next++) {
+          for (const e of exts) {
+            if (await tryLoad(`IMG/${next}.${e}?${cacheBuster}`)) {
+              missingStreak = false; break;
+            }
+          }
+        }
+        if (missingStreak) break;
       }
     }
     // If fewer than 4 images exist locally, add procedural fallback artworks
@@ -984,7 +1001,18 @@
     }
   }
 
+  function clearAppCache() {
+    if ('caches' in window) {
+      caches.keys().then((keys) => {
+        keys.forEach((key) => {
+          caches.delete(key);
+        });
+      }).catch(() => {});
+    }
+  }
+
   /* ================= init ================= */
+  clearAppCache();
   updateSoundUI();
   buildDifficulties();
   buildRankFilters();
@@ -995,13 +1023,12 @@
   buildImageGrid();
   updateMenuBest();
 
-  // 2. Discover local IMG/1.jpg..9.jpg in background and merge if present
+  // 2. Discover local IMG/1.jpg..50.jpg with cache buster timestamp
   discoverImages().then((found) => {
     if (found && found.length > 0) {
-      // Avoid duplicate names/sources
       const localOnly = found.filter(f => !f.id.startsWith('art-'));
       if (localOnly.length > 0) {
-        images = [...localOnly, ...images];
+        images = [...localOnly, ...generateFallbackArtworks()];
         buildImageGrid();
         updateMenuBest();
       }
