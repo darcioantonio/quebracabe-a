@@ -9,14 +9,15 @@
   const NAME_KEY = 'qpc_name';
 
   const DIFFS = {
-    '3x3': { rows: 3, cols: 3, label: 'Fácil' },
-    '4x4': { rows: 4, cols: 4, label: 'Médio' },
-    '5x5': { rows: 5, cols: 5, label: 'Difícil' },
-    '6x6': { rows: 6, cols: 6, label: 'Insano' },
+    '3x3': { rows: 3, cols: 3, label: 'Fácil', sub: '9 pcs' },
+    '4x4': { rows: 4, cols: 4, label: 'Médio', sub: '16 pcs' },
+    '5x5': { rows: 5, cols: 5, label: 'Difícil', sub: '25 pcs' },
+    '6x6': { rows: 6, cols: 6, label: 'Insano', sub: '36 pcs' },
   };
 
   /* ================= state ================= */
   let images = [];
+  let selImage = 'random'; // 'random' or image object { src, name, thumb }
   let selDiff = '4x4';
   let game = null; // { imgSrc, imgName, rows, cols, total, pieceSize, pieces[], tray[], lockedCount, finished }
   let timer = { running: false, elapsedMs: 0, last: 0, interval: null };
@@ -59,7 +60,60 @@
     return localStorage.getItem(NAME_KEY) || '';
   }
 
-  /* ================= image discovery ================= */
+  /* ================= haptics & sound ================= */
+  function haptic(pattern) {
+    if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch {} }
+  }
+
+  let soundOn = localStorage.getItem('qpc_sound') !== '0';
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) { try { audioCtx = new AC(); } catch {} }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume().catch(() => {}); }
+  }
+  function playSeq(notes) {
+    if (!soundOn) return;
+    ensureAudio();
+    if (!audioCtx) return;
+    const now = audioCtx.currentTime;
+    notes.forEach((n) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = n.type || 'sine';
+      osc.frequency.value = n.f;
+      const start = now + (n.t || 0);
+      const dur = n.d || 0.12;
+      const vol = n.g || 0.07;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(vol, start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + dur + 0.03);
+    });
+  }
+  const SFX = {
+    pick:  () => playSeq([{ f: 620, d: 0.07, type: 'triangle', g: 0.05 }]),
+    wrong: () => playSeq([{ f: 150, d: 0.18, type: 'square', g: 0.045 }]),
+    lock:  () => playSeq([{ f: 523, d: 0.09, g: 0.07 }, { f: 784, t: 0.07, d: 0.16, g: 0.07 }]),
+    win:   () => playSeq([
+      { f: 523, d: 0.16, g: 0.08 },
+      { f: 659, t: 0.13, d: 0.16, g: 0.08 },
+      { f: 784, t: 0.26, d: 0.16, g: 0.08 },
+      { f: 1047, t: 0.39, d: 0.34, g: 0.09 },
+    ]),
+  };
+
+  function updateSoundUI() {
+    const btn = $('#btnSound');
+    if (btn) btn.classList.toggle('muted', !soundOn);
+  }
+
+  /* ================= image discovery & fallbacks ================= */
   function tryLoad(src) {
     return new Promise((res) => {
       const im = new Image();
@@ -69,46 +123,121 @@
     });
   }
 
+  function generateFallbackArtworks() {
+    const arts = [
+      { name: 'Galáxia Neon', draw: (ctx, w, h) => {
+        const g = ctx.createRadialGradient(w/2, h/2, 10, w/2, h/2, w*0.7);
+        g.addColorStop(0, '#8b5cf6'); g.addColorStop(0.5, '#ec4899'); g.addColorStop(1, '#0a0b1e');
+        ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+        for(let i=0; i<120; i++) {
+          ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.8})`;
+          ctx.beginPath(); ctx.arc(Math.random()*w, Math.random()*h, Math.random()*2.5, 0, Math.PI*2); ctx.fill();
+        }
+      }},
+      { name: 'Pôr do Sol Retro', draw: (ctx, w, h) => {
+        const g = ctx.createLinearGradient(0,0,0,h);
+        g.addColorStop(0, '#3b0764'); g.addColorStop(0.5, '#f43f5e'); g.addColorStop(1, '#fbbf24');
+        ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+        ctx.fillStyle = '#fef08a'; ctx.beginPath(); ctx.arc(w/2, h*0.5, h*0.22, 0, Math.PI*2); ctx.fill();
+      }},
+      { name: 'Oceano Cristalino', draw: (ctx, w, h) => {
+        const g = ctx.createLinearGradient(0,0,w,h);
+        g.addColorStop(0, '#0284c7'); g.addColorStop(0.5, '#06b6d4'); g.addColorStop(1, '#10b981');
+        ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+        for(let i=0; i<8; i++) {
+          ctx.strokeStyle = `rgba(255,255,255,${0.15 + i*0.08})`; ctx.lineWidth = 6 + i*4;
+          ctx.beginPath(); ctx.arc(w*0.3, h*0.4, 40 + i*35, 0, Math.PI*2); ctx.stroke();
+        }
+      }},
+      { name: 'Arte Abstrata Fluid', draw: (ctx, w, h) => {
+        const g = ctx.createLinearGradient(0,0,w,h);
+        g.addColorStop(0, '#8b5cf6'); g.addColorStop(0.5, '#6366f1'); g.addColorStop(1, '#ec4899');
+        ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+        ctx.fillStyle = 'rgba(251, 191, 36, 0.4)';
+        ctx.beginPath(); ctx.ellipse(w*0.6, h*0.4, w*0.3, h*0.2, Math.PI/4, 0, Math.PI*2); ctx.fill();
+      }}
+    ];
+
+    return arts.map((art, idx) => {
+      const cv = document.createElement('canvas');
+      cv.width = 600; cv.height = 600;
+      const ctx = cv.getContext('2d');
+      art.draw(ctx, 600, 600);
+      const dataUrl = cv.toDataURL('image/jpeg', 0.9);
+      return { src: dataUrl, name: art.name, id: `art-${idx+1}` };
+    });
+  }
+
   async function discoverImages() {
     const found = [];
     const exts = ['jpg', 'jpeg', 'png', 'webp'];
-    for (let i = 1; i <= 99; i++) {
+    for (let i = 1; i <= 9; i++) {
       for (const e of exts) {
         const src = `IMG/${i}.${e}`;
         if (await tryLoad(src)) {
-          found.push({ src, name: `${i}.${e}` });
+          found.push({ src, name: `Imagem ${i}`, id: `img-${i}` });
           break;
         }
       }
+    }
+    // If fewer than 4 images exist locally, add procedural fallback artworks
+    if (found.length < 4) {
+      const fallbacks = generateFallbackArtworks();
+      found.push(...fallbacks);
     }
     return found;
   }
 
   /* ================= menu ================= */
-  function buildMenu() {
-    if (images.length === 0) {
-      $('#noImages').classList.remove('hidden');
-      $('#btnPlay').disabled = true;
-      $('#btnPlay').style.opacity = 0.5;
-    } else {
-      $('#noImages').classList.add('hidden');
-      $('#btnPlay').disabled = false;
-      $('#btnPlay').style.opacity = 1;
-    }
+  function buildImageGrid() {
+    const wrap = $('#imageGrid');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+
+    // "Random" option thumbnail
+    const randDiv = document.createElement('div');
+    randDiv.className = 'image-thumb random-thumb' + (selImage === 'random' ? ' selected' : '');
+    randDiv.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="28" height="28"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+      <span>Aleatório</span>
+    `;
+    randDiv.addEventListener('click', () => {
+      selImage = 'random';
+      $$('.image-thumb').forEach((t) => t.classList.remove('selected'));
+      randDiv.classList.add('selected');
+      SFX.pick();
+    });
+    wrap.appendChild(randDiv);
+
+    images.forEach((img) => {
+      const div = document.createElement('div');
+      div.className = 'image-thumb' + (selImage === img ? ' selected' : '');
+      div.style.backgroundImage = `url("${img.src}")`;
+      div.innerHTML = `<span class="image-thumb-badge">${escapeHtml(img.name)}</span>`;
+      div.addEventListener('click', () => {
+        selImage = img;
+        $$('.image-thumb').forEach((t) => t.classList.remove('selected'));
+        div.classList.add('selected');
+        SFX.pick();
+      });
+      wrap.appendChild(div);
+    });
   }
 
   function buildDifficulties() {
     const wrap = $('#difficultyOptions');
+    if (!wrap) return;
     wrap.innerHTML = '';
     Object.entries(DIFFS).forEach(([key, d]) => {
       const b = document.createElement('button');
       b.className = 'diff-option' + (key === selDiff ? ' selected' : '');
-      b.textContent = `${d.label} ${d.cols}x${d.rows}`;
+      b.innerHTML = `<b>${d.label}</b><span>${d.cols}x${d.rows}</span>`;
       b.addEventListener('click', () => {
         selDiff = key;
         $$('.diff-option').forEach((o) => o.classList.remove('selected'));
         b.classList.add('selected');
         updateMenuBest();
+        SFX.pick();
       });
       wrap.appendChild(b);
     });
@@ -121,7 +250,7 @@
       .sort((a, b) => a.time - b.time)[0];
     if (best) {
       el.classList.remove('hidden');
-      el.innerHTML = `Melhor tempo em <b>${DIFFS[selDiff].label}</b>: <b>${fmtTime(best.time)}</b> — ${best.name}`;
+      el.innerHTML = `Melhor tempo em <b>${DIFFS[selDiff].label}</b>: <b>${fmtTime(best.time)}</b> — ${escapeHtml(best.name)}`;
     } else {
       el.classList.add('hidden');
     }
@@ -135,11 +264,6 @@
   const piecesLayerEl = $('#piecesLayer');
   const timerEl = $('#timerDisplay');
 
-  const landscapeMQ = window.matchMedia('(orientation: landscape)');
-  function isLandscape() {
-    return landscapeMQ.matches;
-  }
-
   function newGame() {
     if (!images.length) return;
     stopTimer();
@@ -152,11 +276,15 @@
     $('#btnSaveRecord').classList.remove('hidden');
     $('#btnViewRanking').classList.add('hidden');
 
-    const img = images[Math.floor(Math.random() * images.length)];
+    let chosenImg = selImage;
+    if (selImage === 'random' || !selImage) {
+      chosenImg = images[Math.floor(Math.random() * images.length)];
+    }
+
     const d = DIFFS[selDiff];
     game = {
-      imgSrc: img.src,
-      imgName: img.name,
+      imgSrc: chosenImg.src,
+      imgName: chosenImg.name,
       rows: d.rows,
       cols: d.cols,
       total: d.rows * d.cols,
@@ -172,8 +300,20 @@
     createCells();
     createPieces();
     measure();
+    updateProgress();
     shuffleAndDeal();
     startTimer();
+  }
+
+  function updateProgress() {
+    if (!game) return;
+    const count = game.lockedCount;
+    const total = game.total;
+    const pct = Math.round((count / total) * 100);
+    const fill = $('#progressFill');
+    const text = $('#progressText');
+    if (fill) fill.style.width = `${pct}%`;
+    if (text) text.textContent = `${count} / ${total} (${pct}%)`;
   }
 
   function createCells() {
@@ -204,7 +344,8 @@
     if (ok) {
       clearSelection();
     } else {
-      toast('Esse quadrado já tem uma peça travada');
+      SFX.wrong();
+      toast('Quadrado ocupado por peça travada');
     }
     relayout();
   }
@@ -221,6 +362,7 @@
     clearSelection();
     selected = piece;
     piece.el.classList.add('selected');
+    SFX.pick();
     updateCells();
   }
 
@@ -277,11 +419,7 @@
       p.el.style.width = game.pieceSize + 'px';
       p.el.style.height = game.pieceSize + 'px';
     });
-    if (!isLandscape()) {
-      trayInnerEl.style.height = `${game.pieceSize + 12}px`;
-    } else {
-      trayInnerEl.style.height = '';
-    }
+    trayInnerEl.style.height = `${game.pieceSize + 16}px`;
   }
 
   function boardCellCenter(index) {
@@ -297,19 +435,14 @@
   function trayPosFor(index) {
     const tr = trayInnerEl.getBoundingClientRect();
     const size = game.pieceSize;
-    const gap = 8;
-    if (isLandscape()) {
-      const x = tr.left + tr.width / 2;
-      const y = tr.top + 12 + index * (size + gap) + size / 2;
-      return { x, y };
-    }
+    const gap = 10;
     const y = tr.top + tr.height / 2;
-    const x = tr.left + 14 + index * (size + gap) + size / 2;
+    const x = tr.left + 16 + index * (size + gap) + size / 2 - trayInnerEl.scrollLeft;
     return { x, y };
   }
 
   function applyTransform(piece, x, y, rot = 0, scale = 1) {
-    const size = piece.el.offsetWidth;
+    const size = piece.el.offsetWidth || game.pieceSize;
     piece.el.style.setProperty('--px', `${x - size / 2}px`);
     piece.el.style.setProperty('--py', `${y - size / 2}px`);
     piece.el.style.setProperty('--rot', `${rot}deg`);
@@ -317,6 +450,7 @@
   }
 
   function relayout() {
+    if (!game) return;
     measure();
     game.pieces.forEach((p) => {
       if (p === dragging?.piece) return;
@@ -385,16 +519,22 @@
     if (v) pauseTimer(); else resumeTimer();
   }
 
-  /* ---------- drag & drop ---------- */
+  /* ---------- drag & drop with finger offset ---------- */
   function onPointerDown(e, piece) {
     if (!game || game.finished || paused) return;
     if (piece.locked) return;
     e.preventDefault();
+    
+    // On touch devices, apply finger Y offset so finger doesn't obscure the piece
+    const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
+    const fingerOffsetY = isTouch ? 50 : 0;
+
     const rect = piece.el.getBoundingClientRect();
     dragging = {
       piece,
       dx: e.clientX - (rect.left + rect.width / 2),
-      dy: e.clientY - (rect.top + rect.height / 2),
+      dy: e.clientY - (rect.top + rect.height / 2) + fingerOffsetY,
+      fingerOffsetY,
       moved: false,
       startX: e.clientX,
       startY: e.clientY,
@@ -406,12 +546,43 @@
 
   function moveDragged(x, y) {
     const d = dragging;
-    if (!d.moved && Math.hypot(x - d.startX, y - d.startY) > 6) {
+    if (!d) return;
+    if (!d.moved && Math.hypot(x - d.startX, y - d.startY) > 5) {
       d.moved = true;
       clearSelection();
     }
     if (d.moved) {
-      applyTransform(d.piece, x - d.dx, y - d.dy, 0, 1.08);
+      const targetY = y - d.dy;
+      const targetX = x - d.dx;
+      applyTransform(d.piece, targetX, targetY, 0, 1.1);
+      checkMagnetHighlight(targetX, targetY);
+    }
+  }
+
+  function checkMagnetHighlight(x, y) {
+    if (!game) return;
+    const { boardRect, cols, rows, pieceSize } = game;
+    let closestCell = -1;
+    let minDist = pieceSize * 0.75;
+
+    for (let i = 0; i < game.total; i++) {
+      const center = boardCellCenter(i);
+      const dist = Math.hypot(x - center.x, y - center.y);
+      if (dist < minDist) {
+        minDist = dist;
+        closestCell = i;
+      }
+    }
+
+    game.cellsEl.forEach((cellEl, idx) => {
+      const isMagnet = idx === closestCell && !game.pieces.some(p => p.cell === idx && p.locked);
+      cellEl.classList.toggle('magnet-highlight', isMagnet);
+    });
+  }
+
+  function clearMagnetHighlights() {
+    if (game && game.cellsEl) {
+      game.cellsEl.forEach(el => el.classList.remove('magnet-highlight'));
     }
   }
 
@@ -419,6 +590,7 @@
     if (!dragging) return;
     const { piece, moved } = dragging;
     piece.el.classList.remove('dragging');
+    clearMagnetHighlights();
     dragging = null;
 
     if (!moved) {
@@ -445,7 +617,10 @@
   function dropPiece(piece, x, y) {
     const { boardRect, cols, rows, pieceSize } = game;
     const insideBoard =
-      x >= boardRect.left && x <= boardRect.right && y >= boardRect.top && y <= boardRect.bottom;
+      x >= boardRect.left - pieceSize * 0.3 &&
+      x <= boardRect.right + pieceSize * 0.3 &&
+      y >= boardRect.top - pieceSize * 0.3 &&
+      y <= boardRect.bottom + pieceSize * 0.3;
 
     if (!insideBoard) {
       if (piece.cell >= 0) {
@@ -477,6 +652,8 @@
     if (piece.id === cell) {
       lockPiece(piece, cell);
     } else {
+      SFX.wrong();
+      haptic(50);
       piece.el.classList.remove('wrong');
       void piece.el.offsetWidth;
       piece.el.classList.add('wrong');
@@ -493,6 +670,10 @@
     piece.locked = true;
     piece.el.classList.add('locked');
     game.lockedCount++;
+    SFX.lock();
+    haptic([30, 40, 30]);
+    updateProgress();
+
     const c = boardCellCenter(cell);
     applyTransform(piece, c.x, c.y, 0, 1);
     if (game.lockedCount === game.total) finishGame();
@@ -501,15 +682,18 @@
   function finishGame() {
     game.finished = true;
     stopTimer();
+    SFX.win();
+    haptic([80, 50, 80, 50, 120]);
+
     const finalMs = timer.elapsedMs;
     setTimeout(() => {
       $('#winTime').textContent = fmtTime(finalMs);
-      $('#winInfo').textContent = `${DIFFS[selDiff].label} — ${game.imgName}`;
+      $('#winInfo').textContent = `${DIFFS[selDiff].label} (${game.cols}x${game.rows}) — ${game.imgName}`;
       $('#playerName').value = getPlayerName();
       $('#btnViewRanking').classList.add('hidden');
       $('#winOverlay').classList.remove('hidden');
       startConfetti();
-    }, 450);
+    }, 400);
   }
 
   /* ---------- pointer events on layer ---------- */
@@ -519,14 +703,21 @@
   piecesLayerEl.addEventListener('pointerup', onPointerUp);
   piecesLayerEl.addEventListener('pointercancel', onPointerUp);
 
+  trayInnerEl.addEventListener('scroll', () => {
+    if (game) relayout();
+  });
+
   window.addEventListener('resize', () => {
     if (game) relayout();
   });
-  if (landscapeMQ.addEventListener) {
-    landscapeMQ.addEventListener('change', () => {
-      if (game) relayout();
-    });
-  }
+
+  /* ---------- sound toggle ---------- */
+  $('#btnSound').addEventListener('click', () => {
+    soundOn = !soundOn;
+    localStorage.setItem('qpc_sound', soundOn ? '1' : '0');
+    updateSoundUI();
+    if (soundOn) SFX.pick();
+  });
 
   /* ---------- win actions ---------- */
   $('#btnSaveRecord').addEventListener('click', () => {
@@ -551,6 +742,7 @@
 
   function buildRankFilters() {
     const wrap = $('#rankFilters');
+    if (!wrap) return;
     wrap.innerHTML = '';
     RANK_FILTERS.forEach((key) => {
       const b = document.createElement('button');
@@ -561,6 +753,7 @@
         $$('.rank-filter').forEach((o) => o.classList.remove('selected'));
         b.classList.add('selected');
         renderRanking();
+        SFX.pick();
       });
       wrap.appendChild(b);
     });
@@ -579,7 +772,6 @@
     list.forEach((r, i) => {
       const row = document.createElement('div');
       row.className = 'rank-row' + (i < 3 ? ` top${i + 1}` : '');
-      row.style.animationDelay = `${i * 0.05}s`;
       const d = new Date(r.date);
       row.innerHTML = `
         <div class="rank-pos">${i + 1}</div>
@@ -641,7 +833,6 @@
 
   /* ================= event wiring ================= */
   $('#btnPlay').addEventListener('click', () => {
-    if (!selImage) { toast('Selecione uma imagem primeiro'); return; }
     showScreen('screen-game');
     newGame();
   });
@@ -649,7 +840,9 @@
   $('#btnRanking').addEventListener('click', () => {
     showScreen('screen-ranking');
     renderRanking();
-  });  $('#btnRankBack').addEventListener('click', () => showScreen('screen-menu'));
+  });
+
+  $('#btnRankBack').addEventListener('click', () => showScreen('screen-menu'));
   $('#btnRankClear').addEventListener('click', () => {
     if (confirm('Apagar todos os recordes?')) {
       saveRanking([]);
@@ -665,7 +858,7 @@
   });
 
   $('#btnPause').addEventListener('click', () => {
-    if (game.finished) return;
+    if (game && game.finished) return;
     setPaused(!paused);
   });
 
@@ -700,6 +893,18 @@
     updateMenuBest();
   });
 
+  /* ================= fullscreen toggle ================= */
+  const btnFS = $('#btnFullscreen');
+  if (btnFS) {
+    btnFS.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+  }
+
   /* ================= install gate (PWA) ================= */
   let deferredPrompt = null;
   const isStandalone =
@@ -719,13 +924,8 @@
     const iosBox = $('#installIos');
     const fallback = $('#installFallback');
 
-    if (isInstalled()) {
-      localStorage.setItem('qpc_installed', '1');
-      screen.classList.add('hidden');
-      return;
-    }
-
-    if (!isMobile) {
+    if (isInstalled() || !isMobile) {
+      if (isInstalled()) localStorage.setItem('qpc_installed', '1');
       screen.classList.add('hidden');
       return;
     }
@@ -782,13 +982,13 @@
         deferredPrompt.userChoice.then((choice) => {
           if (choice.outcome === 'accepted') {
             localStorage.setItem('qpc_installed', '1');
-            toast('Instalado! Agora abra pelo ícone em tela cheia');
+            toast('Instalado! Abra pelo ícone em tela cheia');
           }
         });
       } else if (isIOS) {
         toast('No iPhone: Compartilhar > Adicionar à Tela de Início');
       } else {
-        toast('Instalação disponível em https (ou via localhost)');
+        toast('Instalação disponível em ambiente HTTPS');
       }
     });
 
@@ -802,12 +1002,14 @@
   }
 
   /* ================= init ================= */
+  updateSoundUI();
   buildDifficulties();
   buildRankFilters();
   initInstallGate();
+
   discoverImages().then((found) => {
     images = found;
-    buildMenu();
+    buildImageGrid();
     updateMenuBest();
   });
 })();
