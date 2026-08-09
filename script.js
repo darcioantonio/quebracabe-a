@@ -18,7 +18,7 @@
   /* ================= state ================= */
   let images = [];
   let selDiff = '4x4';
-  let game = null; // { imgSrc, imgName, rows, cols, total, pieceSize, pieces[], tray[], lockedCount, finished }
+  let game = null; // { imgSrc, imgName, rows, cols, total, pieceSize, pieces[], tray[], score, streak, lockedCount, finished }
   let timer = { running: false, elapsedMs: 0, last: 0, interval: null };
   let dragging = null;
   let selected = null;
@@ -42,6 +42,7 @@
   let toastTimer = null;
   function toast(msg) {
     const t = $('#toast');
+    if (!t) return;
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
@@ -73,6 +74,7 @@
     }
     if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume().catch(() => {}); }
   }
+
   function playSeq(notes) {
     if (!soundOn) return;
     ensureAudio();
@@ -85,7 +87,7 @@
       osc.frequency.value = n.f;
       const start = now + (n.t || 0);
       const dur = n.d || 0.12;
-      const vol = n.g || 0.07;
+      const vol = n.g || 0.08;
       gain.gain.setValueAtTime(0.0001, start);
       gain.gain.exponentialRampToValueAtTime(vol, start + 0.012);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
@@ -95,15 +97,33 @@
       osc.stop(start + dur + 0.03);
     });
   }
+
   const SFX = {
     pick:  () => playSeq([{ f: 620, d: 0.07, type: 'triangle', g: 0.05 }]),
-    wrong: () => playSeq([{ f: 150, d: 0.18, type: 'square', g: 0.045 }]),
-    lock:  () => playSeq([{ f: 523, d: 0.09, g: 0.07 }, { f: 784, t: 0.07, d: 0.16, g: 0.07 }]),
+    wrong: () => {
+      if (game) game.streak = 0;
+      playSeq([
+        { f: 180, d: 0.1, type: 'sawtooth', g: 0.06 },
+        { f: 130, t: 0.08, d: 0.15, type: 'sawtooth', g: 0.06 }
+      ]);
+    },
+    lock:  (streak = 1, neighborCount = 0) => {
+      const baseF = 480 + Math.min(streak, 10) * 35;
+      const notes = [
+        { f: baseF, d: 0.08, type: 'sine', g: 0.08 },
+        { f: baseF * 1.25, t: 0.06, d: 0.12, type: 'sine', g: 0.08 }
+      ];
+      if (neighborCount > 0) {
+        notes.push({ f: baseF * 1.5, t: 0.12, d: 0.2, type: 'triangle', g: 0.09 });
+      }
+      playSeq(notes);
+    },
     win:   () => playSeq([
-      { f: 523, d: 0.16, g: 0.08 },
-      { f: 659, t: 0.13, d: 0.16, g: 0.08 },
-      { f: 784, t: 0.26, d: 0.16, g: 0.08 },
-      { f: 1047, t: 0.39, d: 0.34, g: 0.09 },
+      { f: 523, d: 0.14, type: 'triangle', g: 0.09 },
+      { f: 659, t: 0.12, d: 0.14, type: 'triangle', g: 0.09 },
+      { f: 784, t: 0.24, d: 0.14, type: 'triangle', g: 0.09 },
+      { f: 1047, t: 0.38, d: 0.35, type: 'sine', g: 0.1 },
+      { f: 1318, t: 0.52, d: 0.45, type: 'sine', g: 0.1 }
     ]),
   };
 
@@ -336,10 +356,10 @@
     const el = $('#menuBest');
     const best = getRanking()
       .filter((r) => r.diff === selDiff)
-      .sort((a, b) => a.time - b.time)[0];
+      .sort((a, b) => (b.score || 0) - (a.score || 0) || a.time - b.time)[0];
     if (best) {
       el.classList.remove('hidden');
-      el.innerHTML = `Melhor tempo em <b>${DIFFS[selDiff].label} (${DIFFS[selDiff].cols}x${DIFFS[selDiff].rows})</b>: <b>${fmtTime(best.time)}</b> — ${escapeHtml(best.name)}`;
+      el.innerHTML = `Melhor em <b>${DIFFS[selDiff].label}</b>: <b>${(best.score || 0).toLocaleString('pt-BR')} PTS</b> (${fmtTime(best.time)}) — ${escapeHtml(best.name)}`;
     } else {
       el.classList.add('hidden');
     }
@@ -347,7 +367,6 @@
 
   /* ================= game ================= */
   const boardEl = $('#board');
-  const boardImageEl = $('#boardImage');
   const boardCellsEl = $('#boardCells');
   const trayInnerEl = $('#trayInner');
   const piecesLayerEl = $('#piecesLayer');
@@ -360,12 +379,10 @@
     clearSelection();
     $('#pauseOverlay').classList.add('hidden');
     $('#winOverlay').classList.add('hidden');
-    $('#boardImage').classList.remove('show');
     $('#btnPause').classList.remove('paused');
     $('#btnSaveRecord').classList.remove('hidden');
     $('#btnViewRanking').classList.add('hidden');
 
-    // Always pick a random image automatically on new game
     const chosenImg = images[Math.floor(Math.random() * images.length)];
 
     const d = DIFFS[selDiff];
@@ -380,14 +397,15 @@
       tray: [],
       cellsEl: [],
       mesh: generateJigsawMesh(d.rows, d.cols),
+      score: 0,
+      streak: 0,
       lockedCount: 0,
       finished: false,
     };
 
-    boardImageEl.style.backgroundImage = `url("${game.imgSrc}")`;
+    updateScoreUI();
     createCells();
 
-    // Preload image element to render jigsaw canvases
     const loadedImg = new Image();
     loadedImg.crossOrigin = 'anonymous';
     loadedImg.onload = () => {
@@ -405,6 +423,14 @@
       startTimer();
     };
     loadedImg.src = game.imgSrc;
+  }
+
+  function updateScoreUI() {
+    if (!game) return;
+    const scoreBadge = $('#scoreDisplay');
+    if (scoreBadge) {
+      scoreBadge.textContent = `${game.score.toLocaleString('pt-BR')} PTS`;
+    }
   }
 
   function updateProgress() {
@@ -772,12 +798,29 @@
   }
 
   function placeAt(piece, cell) {
+    const oldCell = piece.cell; // Célula anterior da peça (ou -1 se veio da bandeja)
     const occupant = game.pieces.find((p) => p.cell === cell && p !== piece);
+
     if (occupant) {
       if (occupant.locked) return false;
-      occupant.cell = -1;
-      occupant.inTray = true;
-      if (game.tray.indexOf(occupant) === -1) game.tray.push(occupant);
+
+      // Troca de posição (Swap):
+      if (oldCell >= 0) {
+        // Se a peça veio de outra célula do tabuleiro, a ocupante vai para a célula antiga!
+        occupant.cell = oldCell;
+        occupant.inTray = false;
+        removeFromTray(occupant);
+
+        // Se a peça trocada por acaso estiver certa na posição antiga, ela trava!
+        if (occupant.id === oldCell) {
+          lockPiece(occupant, oldCell);
+        }
+      } else {
+        // Se veio da bandeja, a peça ocupante volta para a bandeja
+        occupant.cell = -1;
+        occupant.inTray = true;
+        if (game.tray.indexOf(occupant) === -1) game.tray.push(occupant);
+      }
     }
 
     piece.cell = cell;
@@ -801,17 +844,73 @@
     if (i !== -1) game.tray.splice(i, 1);
   }
 
+  /* ---------- Lock piece & calculate score ---------- */
   function lockPiece(piece, cell) {
     piece.locked = true;
     piece.el.classList.add('locked');
     game.lockedCount++;
-    SFX.lock();
-    haptic([30, 40, 30]);
+
+    const { rows, cols } = game;
+    const r = Math.floor(cell / cols);
+    const c = cell % cols;
+
+    // Check adjacent neighbor cells (Top, Right, Bottom, Left)
+    const neighborIndices = [
+      r > 0 ? (r - 1) * cols + c : -1,         // Top neighbor
+      c < cols - 1 ? r * cols + (c + 1) : -1,   // Right neighbor
+      r < rows - 1 ? (r + 1) * cols + c : -1,   // Bottom neighbor
+      c > 0 ? r * cols + (c - 1) : -1,         // Left neighbor
+    ];
+
+    let neighborCount = 0;
+    neighborIndices.forEach((nIdx) => {
+      if (nIdx >= 0) {
+        const neighborPiece = game.pieces.find(p => p.cell === nIdx && p.locked);
+        if (neighborPiece) neighborCount++;
+      }
+    });
+
+    game.streak = (game.streak || 0) + 1;
+    const basePts = 100;
+    const neighborBonus = neighborCount * 50;
+    const streakBonus = (game.streak - 1) * 25;
+    const addedPoints = basePts + neighborBonus + streakBonus;
+
+    game.score = (game.score || 0) + addedPoints;
+    updateScoreUI();
     updateProgress();
 
-    const c = boardCellCenter(cell);
-    applyTransform(piece, c.x, c.y, 0, 1);
+    SFX.lock(game.streak, neighborCount);
+    haptic([30, 40, 30]);
+
+    const center = boardCellCenter(cell);
+    spawnFloatingScore(center.x, center.y, addedPoints, neighborCount, game.streak);
+    applyTransform(piece, center.x, center.y, 0, 1);
+
     if (game.lockedCount === game.total) finishGame();
+  }
+
+  function spawnFloatingScore(x, y, points, neighborCount, streak) {
+    const stage = $('.game-stage');
+    if (!stage) return;
+    const stageRect = stage.getBoundingClientRect();
+    const relX = x - stageRect.left;
+    const relY = y - stageRect.top;
+
+    const el = document.createElement('div');
+    el.className = 'floating-score' + (neighborCount > 0 ? ' combo-bonus' : '');
+    el.style.left = `${relX}px`;
+    el.style.top = `${relY}px`;
+
+    let label = `+${points}`;
+    if (neighborCount === 1) label += ' PAR! 🧩';
+    else if (neighborCount >= 2) label += ` COMBO x${neighborCount}! 🔥`;
+    else if (streak > 2) label += ` STREAK x${streak}! ⭐`;
+
+    el.textContent = label;
+    stage.appendChild(el);
+
+    setTimeout(() => el.remove(), 850);
   }
 
   function finishGame() {
@@ -821,8 +920,12 @@
     haptic([80, 50, 80, 50, 120]);
 
     const finalMs = timer.elapsedMs;
+    const finalScore = game.score;
+
     setTimeout(() => {
       $('#winTime').textContent = fmtTime(finalMs);
+      const winScoreEl = $('#winScore');
+      if (winScoreEl) winScoreEl.textContent = `${finalScore.toLocaleString('pt-BR')} PTS`;
       $('#winInfo').textContent = `${DIFFS[selDiff].label} (${game.cols}x${game.rows} - ${game.total} pcs) — ${game.imgName}`;
       $('#playerName').value = getPlayerName();
       $('#btnViewRanking').classList.add('hidden');
@@ -858,10 +961,17 @@
   $('#btnSaveRecord').addEventListener('click', () => {
     const name = ($('#playerName').value.trim() || 'Jogador').slice(0, 20);
     localStorage.setItem(NAME_KEY, name);
-    const rec = { name, time: timer.elapsedMs, diff: selDiff, img: game.imgName, date: Date.now() };
+    const rec = {
+      name,
+      time: timer.elapsedMs,
+      score: game.score,
+      diff: selDiff,
+      img: game.imgName,
+      date: Date.now()
+    };
     const list = getRanking();
     list.push(rec);
-    list.sort((a, b) => a.time - b.time);
+    list.sort((a, b) => (b.score || 0) - (a.score || 0) || a.time - b.time);
     const top = list.slice(0, 10);
     saveRanking(top);
     const pos = top.indexOf(rec) + 1;
@@ -897,7 +1007,7 @@
   function renderRanking() {
     const list = getRanking()
       .filter((r) => rankFilter === 'todos' || r.diff === rankFilter)
-      .sort((a, b) => a.time - b.time)
+      .sort((a, b) => (b.score || 0) - (a.score || 0) || a.time - b.time)
       .slice(0, 10);
 
     const wrap = $('#rankList');
@@ -908,12 +1018,13 @@
       const row = document.createElement('div');
       row.className = 'rank-row' + (i < 3 ? ` top${i + 1}` : '');
       const d = new Date(r.date);
+      const scoreTxt = r.score ? `${r.score.toLocaleString('pt-BR')} PTS` : fmtTime(r.time);
       row.innerHTML = `
         <div class="rank-pos">${i + 1}</div>
         <div class="rank-name">${escapeHtml(r.name)}</div>
         <div class="rank-meta">
-          <div class="rank-time">${fmtTime(r.time)}</div>
-          <span class="rank-chip">${DIFFS[r.diff]?.label || r.diff} · ${escapeHtml(r.img)}</span>
+          <div class="rank-time">${scoreTxt}</div>
+          <span class="rank-chip">${DIFFS[r.diff]?.label || r.diff} · ${fmtTime(r.time)}</span>
           <span class="rank-date">${d.toLocaleDateString('pt-BR')}</span>
         </div>`;
       wrap.appendChild(row);
@@ -1004,10 +1115,6 @@
     stopTimer();
     showScreen('screen-menu');
     updateMenuBest();
-  });
-
-  $('#btnPreview').addEventListener('click', () => {
-    $('#boardImage').classList.toggle('show');
   });
 
   $('#btnViewRanking').addEventListener('click', () => {
@@ -1136,11 +1243,9 @@
   buildRankFilters();
   initInstallGate();
 
-  // Load fallback images SYNCHRONOUSLY
   images = generateFallbackArtworks();
   updateMenuBest();
 
-  // Discover local IMG/1.jpg..50.jpg
   discoverImages().then((found) => {
     if (found && found.length > 0) {
       const localOnly = found.filter(f => !f.id.startsWith('art-'));
