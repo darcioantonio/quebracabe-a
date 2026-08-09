@@ -9,10 +9,10 @@
   const NAME_KEY = 'qpc_name';
 
   const DIFFS = {
-    '4x4': { rows: 4, cols: 4, label: 'Fácil', sub: '16 pcs' },
-    '6x6': { rows: 6, cols: 6, label: 'Médio', sub: '36 pcs' },
-    '8x8': { rows: 8, cols: 8, label: 'Difícil', sub: '64 pcs' },
-    '10x10': { rows: 10, cols: 10, label: 'Insano', sub: '100 pcs' },
+    '3x3': { rows: 3, cols: 3, label: 'Fácil', sub: '9 pcs' },
+    '4x4': { rows: 4, cols: 4, label: 'Médio', sub: '16 pcs' },
+    '6x6': { rows: 6, cols: 6, label: 'Difícil', sub: '36 pcs' },
+    '8x8': { rows: 8, cols: 8, label: 'Insano', sub: '64 pcs' },
   };
 
   /* ================= state ================= */
@@ -222,116 +222,6 @@
     return found;
   }
 
-  /* ================= JIGSAW PUZZLE PIECE MESH & CANVAS DRAWING ================= */
-  function generateJigsawMesh(rows, cols) {
-    const hEdges = Array.from({ length: rows - 1 }, () =>
-      Array.from({ length: cols }, () => (Math.random() < 0.5 ? 1 : -1))
-    );
-    const vEdges = Array.from({ length: rows }, () =>
-      Array.from({ length: cols - 1 }, () => (Math.random() < 0.5 ? 1 : -1))
-    );
-
-    const mesh = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        mesh.push({
-          top: r === 0 ? 0 : -hEdges[r - 1][c],
-          right: c === cols - 1 ? 0 : vEdges[r][c],
-          bottom: r === rows - 1 ? 0 : hEdges[r][c],
-          left: c === 0 ? 0 : -vEdges[r][c - 1],
-        });
-      }
-    }
-    return mesh;
-  }
-
-  function drawJigsawEdge(ctx, x1, y1, x2, y2, edgeVal) {
-    if (edgeVal === 0) {
-      ctx.lineTo(x2, y2);
-      return;
-    }
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    const ux = dx / len;
-    const uy = dy / len;
-    const nx = -uy * edgeVal;
-    const ny =  ux * edgeVal;
-
-    const tabH = len * 0.22;
-
-    const p = (t, n) => ({
-      x: x1 + ux * (t * len) + nx * (n * tabH),
-      y: y1 + uy * (t * len) + ny * (n * tabH),
-    });
-
-    const p35 = p(0.35, 0);
-    const p38 = p(0.38, 0.05);
-    const p42 = p(0.40, 0.35);
-    const p44 = p(0.42, 0.85);
-    const p56 = p(0.58, 0.85);
-    const p58 = p(0.60, 0.35);
-    const p62 = p(0.62, 0.05);
-    const p65 = p(0.65, 0);
-
-    ctx.lineTo(p35.x, p35.y);
-    ctx.bezierCurveTo(p38.x, p38.y, p42.x, p42.y, p44.x, p44.y);
-    ctx.bezierCurveTo(p(0.44, 1.18).x, p(0.44, 1.18).y, p(0.56, 1.18).x, p(0.56, 1.18).y, p56.x, p56.y);
-    ctx.bezierCurveTo(p58.x, p58.y, p62.x, p62.y, p65.x, p65.y);
-    ctx.lineTo(x2, y2);
-  }
-
-  function renderJigsawPieceCanvas(imgEl, r, c, rows, cols, w, h, edges) {
-    const tabMargin = Math.ceil(Math.max(w, h) * 0.28);
-    const cvW = Math.ceil(w + 2 * tabMargin);
-    const cvH = Math.ceil(h + 2 * tabMargin);
-
-    const cv = document.createElement('canvas');
-    cv.width = cvW;
-    cv.height = cvH;
-    const ctx = cv.getContext('2d');
-
-    const x0 = tabMargin;
-    const y0 = tabMargin;
-    const x1 = tabMargin + w;
-    const y1 = tabMargin + h;
-
-    ctx.beginPath();
-    ctx.moveTo(x0, y0);
-    drawJigsawEdge(ctx, x0, y0, x1, y0, edges.top);
-    drawJigsawEdge(ctx, x1, y0, x1, y1, edges.right);
-    drawJigsawEdge(ctx, x1, y1, x0, y1, edges.bottom);
-    drawJigsawEdge(ctx, x0, y1, x0, y0, edges.left);
-    ctx.closePath();
-
-    ctx.save();
-    ctx.clip();
-
-    const origW = imgEl.naturalWidth || imgEl.width || 600;
-    const origH = imgEl.naturalHeight || imgEl.height || 600;
-    const cellW = origW / cols;
-    const cellH = origH / rows;
-
-    const srcX = c * cellW - (tabMargin / w) * cellW;
-    const srcY = r * cellH - (tabMargin / h) * cellH;
-    const srcW = (cvW / w) * cellW;
-    const srcH = (cvH / h) * cellH;
-
-    ctx.drawImage(imgEl, srcX, srcY, srcW, srcH, 0, 0, cvW, cvH);
-
-    // 3D tactile bevel stroke
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
-    ctx.lineWidth = Math.max(1.8, w * 0.045);
-    ctx.stroke();
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = Math.max(1.0, w * 0.022);
-    ctx.stroke();
-
-    ctx.restore();
-
-    return { dataUrl: cv.toDataURL(), cvW, cvH, tabMargin };
-  }
-
   /* ================= menu ================= */
   function buildDifficulties() {
     const wrap = $('#difficultyOptions');
@@ -396,7 +286,6 @@
       pieces: [],
       tray: [],
       cellsEl: [],
-      mesh: generateJigsawMesh(d.rows, d.cols),
       score: 0,
       streak: 0,
       lockedCount: 0,
@@ -405,24 +294,11 @@
 
     updateScoreUI();
     createCells();
-
-    const loadedImg = new Image();
-    loadedImg.crossOrigin = 'anonymous';
-    loadedImg.onload = () => {
-      createPieces(loadedImg);
-      measure();
-      updateProgress();
-      shuffleAndDeal();
-      startTimer();
-    };
-    loadedImg.onerror = () => {
-      createPieces(null);
-      measure();
-      updateProgress();
-      shuffleAndDeal();
-      startTimer();
-    };
-    loadedImg.src = game.imgSrc;
+    createPieces();
+    measure();
+    updateProgress();
+    shuffleAndDeal();
+    startTimer();
   }
 
   function updateScoreUI() {
@@ -502,45 +378,25 @@
     });
   }
 
-  function createPieces(loadedImg) {
+  /* ---------- Square Tiles Creation ---------- */
+  function createPieces() {
     piecesLayerEl.innerHTML = '';
     game.pieces = [];
     const { rows, cols } = game;
     const total = rows * cols;
-    const pieceW = boardEl.clientWidth / cols || 40;
-    const pieceH = boardEl.clientHeight / rows || 40;
 
     for (let id = 0; id < total; id++) {
       const r = Math.floor(id / cols);
       const c = id % cols;
       const el = document.createElement('div');
       el.className = 'piece';
-
-      let cvW = pieceW;
-      let cvH = pieceH;
-      let tabMargin = 0;
-
-      if (loadedImg) {
-        const rendered = renderJigsawPieceCanvas(
-          loadedImg, r, c, rows, cols, pieceW, pieceH, game.mesh[id]
-        );
-        el.style.backgroundImage = `url("${rendered.dataUrl}")`;
-        el.style.backgroundSize = '100% 100%';
-        cvW = rendered.cvW;
-        cvH = rendered.cvH;
-        tabMargin = rendered.tabMargin;
-      } else {
-        el.style.backgroundImage = `url("${game.imgSrc}")`;
-        el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
-        el.style.backgroundPosition = `${cols === 1 ? 0 : (c / (cols - 1)) * 100}% ${rows === 1 ? 0 : (r / (rows - 1)) * 100}%`;
-      }
+      el.style.backgroundImage = `url("${game.imgSrc}")`;
+      el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`;
+      el.style.backgroundPosition = `${cols === 1 ? 0 : (c / (cols - 1)) * 100}% ${rows === 1 ? 0 : (r / (rows - 1)) * 100}%`;
 
       const piece = {
         id,
         el,
-        cvW,
-        cvH,
-        tabMargin,
         locked: false,
         cell: -1,
         inTray: true,
@@ -567,20 +423,12 @@
     game.boardRect = boardEl.getBoundingClientRect();
     boardEl.style.backgroundSize = `${game.pieceSize * 2}px ${game.pieceSize * 2}px`;
 
-    const { rows, cols } = game;
-    const pieceW = game.pieceSize;
-    const pieceH = game.pieceSize;
-
     game.pieces.forEach((p) => {
-      const tabMargin = Math.ceil(Math.max(pieceW, pieceH) * 0.28);
-      p.cvW = Math.ceil(pieceW + 2 * tabMargin);
-      p.cvH = Math.ceil(pieceH + 2 * tabMargin);
-      p.tabMargin = tabMargin;
-      p.el.style.width = p.cvW + 'px';
-      p.el.style.height = p.cvH + 'px';
+      p.el.style.width = game.pieceSize + 'px';
+      p.el.style.height = game.pieceSize + 'px';
     });
 
-    trayInnerEl.style.height = `${game.pieceSize * 1.5 + 20}px`;
+    trayInnerEl.style.height = `${game.pieceSize + 16}px`;
   }
 
   function boardCellCenter(index) {
@@ -596,17 +444,16 @@
   function trayPosFor(index) {
     const tr = trayInnerEl.getBoundingClientRect();
     const size = game.pieceSize;
-    const gap = 12;
+    const gap = 10;
     const y = tr.top + tr.height / 2;
-    const x = tr.left + 20 + index * (size * 1.2 + gap) + (size * 1.2) / 2 - trayInnerEl.scrollLeft;
+    const x = tr.left + 16 + index * (size + gap) + size / 2 - trayInnerEl.scrollLeft;
     return { x, y };
   }
 
   function applyTransform(piece, x, y, rot = 0, scale = 1) {
-    const sizeW = piece.cvW || game.pieceSize;
-    const sizeH = piece.cvH || game.pieceSize;
-    piece.el.style.setProperty('--px', `${x - sizeW / 2}px`);
-    piece.el.style.setProperty('--py', `${y - sizeH / 2}px`);
+    const size = piece.el.offsetWidth || game.pieceSize;
+    piece.el.style.setProperty('--px', `${x - size / 2}px`);
+    piece.el.style.setProperty('--py', `${y - size / 2}px`);
     piece.el.style.setProperty('--rot', `${rot}deg`);
     piece.el.style.setProperty('--scale', scale);
   }
@@ -797,26 +644,24 @@
     placeAt(piece, r * cols + c);
   }
 
+  /* ---------- Piece placement & Swap ---------- */
   function placeAt(piece, cell) {
-    const oldCell = piece.cell; // Célula anterior da peça (ou -1 se veio da bandeja)
+    const oldCell = piece.cell;
     const occupant = game.pieces.find((p) => p.cell === cell && p !== piece);
 
     if (occupant) {
       if (occupant.locked) return false;
 
-      // Troca de posição (Swap):
+      // Swap pieces if target cell is occupied
       if (oldCell >= 0) {
-        // Se a peça veio de outra célula do tabuleiro, a ocupante vai para a célula antiga!
         occupant.cell = oldCell;
         occupant.inTray = false;
         removeFromTray(occupant);
 
-        // Se a peça trocada por acaso estiver certa na posição antiga, ela trava!
         if (occupant.id === oldCell) {
           lockPiece(occupant, oldCell);
         }
       } else {
-        // Se veio da bandeja, a peça ocupante volta para a bandeja
         occupant.cell = -1;
         occupant.inTray = true;
         if (game.tray.indexOf(occupant) === -1) game.tray.push(occupant);
@@ -856,10 +701,10 @@
 
     // Check adjacent neighbor cells (Top, Right, Bottom, Left)
     const neighborIndices = [
-      r > 0 ? (r - 1) * cols + c : -1,         // Top neighbor
-      c < cols - 1 ? r * cols + (c + 1) : -1,   // Right neighbor
-      r < rows - 1 ? (r + 1) * cols + c : -1,   // Bottom neighbor
-      c > 0 ? r * cols + (c - 1) : -1,         // Left neighbor
+      r > 0 ? (r - 1) * cols + c : -1,
+      c < cols - 1 ? r * cols + (c + 1) : -1,
+      r < rows - 1 ? (r + 1) * cols + c : -1,
+      c > 0 ? r * cols + (c - 1) : -1,
     ];
 
     let neighborCount = 0;
@@ -903,7 +748,7 @@
     el.style.top = `${relY}px`;
 
     let label = `+${points}`;
-    if (neighborCount === 1) label += ' PAR! 🧩';
+    if (neighborCount === 1) label += ' PAR!';
     else if (neighborCount >= 2) label += ` COMBO x${neighborCount}! 🔥`;
     else if (streak > 2) label += ` STREAK x${streak}! ⭐`;
 
