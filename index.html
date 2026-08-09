@@ -24,8 +24,9 @@
 <canvas id="confetti" aria-hidden="true"></canvas>
 
 <!-- ============ INSTALL GATE ============ -->
-<div id="installScreen" class="install-screen">
+<div id="installScreen" class="install-screen hidden">
   <div class="install-card">
+    <button id="btnCloseInstall" class="icon-btn close-install-btn" title="Fechar">&times;</button>
     <div class="install-icon">
       <img src="icons/icon-192.png" alt="Quebra-Cabeça">
     </div>
@@ -46,9 +47,9 @@
       </div>
     </div>
     <p id="installFallback" class="install-fallback hidden">
-      Para instalar, abra este site por um endereço seguro (https). Se preferir,
-      <a href="#" id="btnPlayAnyway">jogar direto no navegador</a>.
+      Para instalar no navegador, adicione à tela inicial pelo menu do navegador (três pontos ou compartilhar).
     </p>
+    <button id="btnPlayAnyway" class="btn btn-ghost" style="margin-top: 12px;">Jogar no Navegador</button>
   </div>
 </div>
 

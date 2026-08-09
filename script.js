@@ -911,7 +911,6 @@
     window.matchMedia('(display-mode: standalone)').matches ||
     window.matchMedia('(display-mode: fullscreen)').matches ||
     window.navigator.standalone === true;
-  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
   function isInstalled() {
@@ -923,82 +922,66 @@
     const btnInstall = $('#btnInstall');
     const iosBox = $('#installIos');
     const fallback = $('#installFallback');
+    const btnClose = $('#btnCloseInstall');
+    const btnPlayAnyway = $('#btnPlayAnyway');
 
-    if (isInstalled() || !isMobile) {
-      if (isInstalled()) localStorage.setItem('qpc_installed', '1');
-      screen.classList.add('hidden');
-      return;
-    }
-
-    screen.classList.remove('hidden');
-    btnInstall.disabled = true;
-    btnInstall.textContent = 'Verificando...';
-
-    const tryPrompt = () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then((choice) => {
-          if (choice.outcome === 'accepted') {
-            localStorage.setItem('qpc_installed', '1');
-            screen.classList.add('hidden');
-            toast('Instalado! Jogo em tela cheia');
-          }
-        });
-      } else if (isIOS) {
-        iosBox.classList.remove('hidden');
-        btnInstall.classList.add('hidden');
-      } else {
-        fallback.classList.remove('hidden');
-        btnInstall.classList.add('hidden');
-      }
+    const dismissScreen = () => {
+      if (screen) screen.classList.add('hidden');
     };
+
+    if (btnClose) btnClose.addEventListener('click', dismissScreen);
+    if (btnPlayAnyway) btnPlayAnyway.addEventListener('click', dismissScreen);
 
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      btnInstall.disabled = false;
-      btnInstall.textContent = 'Instalar agora';
+      if (btnInstall) {
+        btnInstall.disabled = false;
+        btnInstall.textContent = 'Instalar agora';
+      }
     });
 
     window.addEventListener('appinstalled', () => {
       localStorage.setItem('qpc_installed', '1');
-      screen.classList.add('hidden');
+      dismissScreen();
+      toast('App Instalado com Sucesso!');
     });
 
-    btnInstall.addEventListener('click', tryPrompt);
-
-    $('#btnPlayAnyway').addEventListener('click', (e) => {
-      e.preventDefault();
-      screen.classList.add('hidden');
-    });
+    if (btnInstall) {
+      btnInstall.addEventListener('click', () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choice) => {
+            if (choice.outcome === 'accepted') {
+              localStorage.setItem('qpc_installed', '1');
+              dismissScreen();
+              toast('Instalado! Jogo em tela cheia');
+            }
+          });
+        } else if (isIOS) {
+          if (iosBox) iosBox.classList.remove('hidden');
+        } else {
+          if (fallback) fallback.classList.remove('hidden');
+        }
+      });
+    }
 
     const btnInstallApp = $('#btnInstallApp');
-    if (isInstalled()) {
-      btnInstallApp.classList.add('hidden');
+    if (btnInstallApp) {
+      btnInstallApp.addEventListener('click', () => {
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
+          deferredPrompt.userChoice.then((choice) => {
+            if (choice.outcome === 'accepted') {
+              localStorage.setItem('qpc_installed', '1');
+              toast('Instalado! Abra pelo ícone na tela inicial');
+            }
+          });
+        } else {
+          if (screen) screen.classList.remove('hidden');
+        }
+      });
     }
-    btnInstallApp.addEventListener('click', () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then((choice) => {
-          if (choice.outcome === 'accepted') {
-            localStorage.setItem('qpc_installed', '1');
-            toast('Instalado! Abra pelo ícone em tela cheia');
-          }
-        });
-      } else if (isIOS) {
-        toast('No iPhone: Compartilhar > Adicionar à Tela de Início');
-      } else {
-        toast('Instalação disponível em ambiente HTTPS');
-      }
-    });
-
-    setTimeout(() => {
-      if (!screen.classList.contains('hidden') && btnInstall.disabled) {
-        btnInstall.disabled = false;
-        btnInstall.textContent = 'Instalar agora';
-        tryPrompt();
-      }
-    }, 1500);
   }
 
   /* ================= init ================= */
@@ -1007,9 +990,21 @@
   buildRankFilters();
   initInstallGate();
 
+  // 1. Load fallback images SYNCHRONOUSLY so game can be played instantly (0ms)
+  images = generateFallbackArtworks();
+  buildImageGrid();
+  updateMenuBest();
+
+  // 2. Discover local IMG/1.jpg..9.jpg in background and merge if present
   discoverImages().then((found) => {
-    images = found;
-    buildImageGrid();
-    updateMenuBest();
-  });
+    if (found && found.length > 0) {
+      // Avoid duplicate names/sources
+      const localOnly = found.filter(f => !f.id.startsWith('art-'));
+      if (localOnly.length > 0) {
+        images = [...localOnly, ...images];
+        buildImageGrid();
+        updateMenuBest();
+      }
+    }
+  }).catch(() => {});
 })();

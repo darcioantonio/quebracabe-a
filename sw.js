@@ -1,4 +1,4 @@
-const CACHE = 'qpc-v2';
+const CACHE_NAME = 'qpc-v3-' + Date.now();
 const CORE = [
   './',
   './index.html',
@@ -12,7 +12,7 @@ const CORE = [
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE)
+    caches.open(CACHE_NAME)
       .then((c) => c.addAll(CORE))
       .then(() => self.skipWaiting())
   );
@@ -21,7 +21,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -29,17 +29,33 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET') return;
+
+  // Network First for IMG directory to always get new/updated images
+  if (req.url.includes('/IMG/')) {
+    e.respondWith(
+      fetch(req, { cache: 'no-store' })
+        .then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // Network First with Cache Fallback for all other assets
   e.respondWith(
-    caches.match(req).then((hit) => {
-      const network = fetch(req).then((res) => {
-        if (res && res.status === 200 &&
-            (req.url.includes('/IMG/') || req.url.includes('/icons/'))) {
+    fetch(req)
+      .then((res) => {
+        if (res && res.status === 200) {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy));
+          caches.open(CACHE_NAME).then((c) => c.put(req, copy));
         }
         return res;
-      }).catch(() => hit);
-      return hit || network;
-    })
+      })
+      .catch(() => caches.match(req))
   );
 });
